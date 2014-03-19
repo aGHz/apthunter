@@ -3,7 +3,16 @@
 import re
 import requests
 from structominer import Document, StructuredListField, TextField, URLField, IntField
+import urlparse
 
+
+area = "ville-de-montreal"
+price_from = 600
+price_to = 900
+url = "http://www.kijiji.ca/b-appartement-condo/{area}/c37l1700281?price={from_}.00__{to}.00".format(
+    from_=price_from,
+    to=price_to,
+    area=area)
 
 class ConditionalURLField(URLField): _masquerades_ = URLField
 class ConstructedURLField(TextField): _masquerades_ = TextField
@@ -19,11 +28,11 @@ class Listings(Document):
         map_url = ConstructedURLField('.//td[contains(@class, "watchlist")]/div/@data-adid')
     ))
 
-    @listings.name.preprocessor()
+    @listings.name.pre()
     def _clean_name_fractions(value, **kwargs):
         return map(lambda s: s.replace(u"½", u'1/2'), value)
 
-    @listings.name.postprocessor()
+    @listings.name.post()
     def _normalize_titles(value, **kwargs):
         value = value.lower()
         value = re.sub('(?<=\d)1/2', '-1/2', value) # 31/2 -> 3-1/2
@@ -31,30 +40,27 @@ class Listings(Document):
         value = re.sub('(?<=\d)\.5', '-1/2', value) # 3.5 -> 3-1/2
         return value
 
-    @listings.price.preprocessor()
+    @listings.link.post()
+    def _rebase_links(value, **kwargs):
+        return urlparse.urljoin(url, value)
+
+    @listings.price.pre()
     def _extract_price(value, **kwargs):
         return value.split(',')[0]
 
-    @listings.has_image.postprocessor()
+    @listings.has_image.post()
     def _has_image(value, **kwargs):
         return 'placeholder' not in value
 
-    @listings.posted_delay.preprocessor()
+    @listings.posted_delay.pre()
     def _extract_posted_delay_in_minutes(value, **kwargs):
         _, i, unit = value.rsplit(' ', 2)
         return int(i) * (60 if unit.startswith('h') else 1)
 
-    @listings.map_url.postprocessor()
+    @listings.map_url.post()
     def _construct_map_url_from_id(value, **kwargs):
         return "http://www.kijiji.ca/v-map-view.html?adId={0}&enableSearchNavigationFlag=true".format(value)
 
-area = "ville-de-montreal"
-price_from = 600
-price_to = 900
-url = "http://www.kijiji.ca/b-appartement-condo/{area}/c37l1700281?price={from_}.00__{to}.00".format(
-    from_=price_from,
-    to=price_to,
-    area=area)
 page = requests.get(url)
 
 listings = Listings(page.content)
