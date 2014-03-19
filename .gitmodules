@@ -1,0 +1,3 @@
+[submodule "structominer"]
+	path = structominer
+	url = git@github.com:aGHz/structominer.git
